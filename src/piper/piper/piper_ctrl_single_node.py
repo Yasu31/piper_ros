@@ -67,6 +67,7 @@ class PiperRosNode(Node):
         # Start subscription thread
         self.create_subscription(PosCmd, 'pos_cmd', self.pos_callback, 1)
         self.create_subscription(JointState, 'joint_ctrl_single', self.joint_callback, 1)
+        self.create_subscription(JointState, 'joint_states_gripper', self.joint_gripper_callback, 1)
         self.create_subscription(Bool, 'enable_flag', self.enable_callback, 1)
 
         self.publisher_thread = threading.Thread(target=self.publish_thread)
@@ -292,20 +293,36 @@ class PiperRosNode(Node):
                 joint_positions.get('joint5', 0),
                 joint_positions.get('joint6', 0)
             )
+    
+    def joint_gripper_callback(self, joint_data):
+        """Callback function just for the gripper
 
+        Args:
+            joint_data (): The joint data
+        """
+
+        assert len(joint_data.name) == 1
+        assert joint_data.name[0] == 'joint6'
+        assert len(joint_data.position) == 1
+        assert self.gripper_exist
+
+        joint_6 = round(joint_data.position[0] * 1000 * 1000)
+        joint_6 = joint_6 * self.gripper_val_mutiple
+
+        # 控制电机速度
+        if self.GetEnableFlag():
             # 夹爪控制
-            if self.gripper_exist:
-                if len(joint_data.effort) >= 7:
-                    gripper_effort = clip(joint_data.effort[6], 0.5, 3)
-                    # self.get_logger().info(f"gripper_effort: {gripper_effort}")
-                    if not math.isnan(gripper_effort):
-                        gripper_effort = round(gripper_effort * 1000)
-                    else:
-                        # self.get_logger().warning("Gripper effort is NaN, using default value.")
-                        gripper_effort = 0  # 设置默认值
-                    self.piper.GripperCtrl(abs(joint_6), gripper_effort, 0x01, 0)
+            if len(joint_data.effort) >= 1:
+                gripper_effort = clip(joint_data.effort[0], 0.5, 3)
+                # self.get_logger().info(f"gripper_effort: {gripper_effort}")
+                if not math.isnan(gripper_effort):
+                    gripper_effort = round(gripper_effort * 1000)
                 else:
-                    self.piper.GripperCtrl(abs(joint_6), 1000, 0x01, 0)
+                    # self.get_logger().warning("Gripper effort is NaN, using default value.")
+                    gripper_effort = 0  # 设置默认值
+                self.piper.GripperCtrl(abs(joint_6), gripper_effort, 0x01, 0)
+            else:
+                self.piper.GripperCtrl(abs(joint_6), 1000, 0x01, 0)
 
 
     def enable_callback(self, enable_flag: Bool):
